@@ -12,51 +12,66 @@
     }
 
     #chat {
-      height: 80vh;
+      height: 70vh;
       overflow-y: scroll;
       padding: 10px;
       border-bottom: 1px solid #30363d;
     }
 
     .msg {
-      margin: 6px 0;
-      padding: 6px;
+      display: flex;
+      gap: 10px;
+      margin: 8px 0;
+      padding: 8px;
       background: #161b22;
       border-radius: 6px;
+    }
+
+    .pfp {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    .content {
+      flex: 1;
     }
 
     .name {
       font-weight: bold;
-      color: #58a6ff;
     }
 
     .time {
-      font-size: 0.8em;
+      font-size: 0.75em;
       color: #8b949e;
-      margin-left: 8px;
+      margin-left: 6px;
+    }
+
+    #typing {
+      padding: 5px 10px;
+      font-size: 0.9em;
+      color: #8b949e;
+      height: 20px;
     }
 
     #inputArea {
       display: flex;
+      flex-wrap: wrap;
       gap: 5px;
       padding: 10px;
     }
 
-    input {
-      flex: 1;
-      padding: 10px;
+    input, button {
+      padding: 8px;
+      border-radius: 6px;
       border: 1px solid #30363d;
       background: #161b22;
       color: white;
-      border-radius: 6px;
     }
 
     button {
-      padding: 10px;
-      border: none;
       background: #238636;
-      color: white;
-      border-radius: 6px;
       cursor: pointer;
     }
   </style>
@@ -65,12 +80,18 @@
 <body>
 
 <div id="chat"></div>
+<div id="typing"></div>
 
 <div id="inputArea">
   <input id="name" placeholder="Name">
+  <input type="color" id="color" value="#58a6ff">
+  <input type="file" id="pfpInput" accept="image/*">
   <input id="message" placeholder="Message">
   <button onclick="send()">Send</button>
 </div>
+
+<!-- Sound -->
+<audio id="ping" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
@@ -89,46 +110,99 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
+  let pfpData = localStorage.getItem("pfp") || "";
+  let typingTimeout;
+
+  document.getElementById("pfpInput").addEventListener("change", e => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      pfpData = reader.result;
+      localStorage.setItem("pfp", pfpData);
+    };
+    if (e.target.files[0]) reader.readAsDataURL(e.target.files[0]);
+  });
+
+  const nameInput = document.getElementById("name");
+  const messageInput = document.getElementById("message");
+
+  // typing indicator send
+  messageInput.addEventListener("input", () => {
+    const name = nameInput.value || "anon";
+
+    db.ref("typing").set({
+      name: name,
+      time: Date.now()
+    });
+
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => {
+      db.ref("typing").remove();
+    }, 2000);
+  });
+
   function send() {
-    const name = document.getElementById("name").value || "anon";
-    const message = document.getElementById("message").value;
+    const name = nameInput.value || "anon";
+    const message = messageInput.value;
+    const color = document.getElementById("color").value;
 
     if (message.trim() === "") return;
 
     db.ref("messages").push({
-      name: name,
+      name,
       text: message,
+      color,
+      pfp: pfpData,
       time: Date.now()
     });
 
-    document.getElementById("message").value = "";
+    messageInput.value = "";
+    db.ref("typing").remove();
   }
 
-  function formatTime(timestamp) {
-    const date = new Date(timestamp);
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  function formatTime(t) {
+    const d = new Date(t);
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
   const chatDiv = document.getElementById("chat");
 
-  db.ref("messages")
-    .limitToLast(100) // loads last 100 messages
-    .on("child_added", snapshot => {
+  db.ref("messages").limitToLast(100).on("child_added", snapshot => {
+    const msg = snapshot.val();
 
-      const msg = snapshot.val();
+    const div = document.createElement("div");
+    div.className = "msg";
 
-      const div = document.createElement("div");
-      div.className = "msg";
+    const pfp = msg.pfp || "https://via.placeholder.com/40";
 
-      div.innerHTML = `
-        <span class="name">${msg.name}</span>
-        <span class="time">${formatTime(msg.time)}</span><br>
-        ${msg.text}
-      `;
+    div.innerHTML = `
+      <img class="pfp" src="${pfp}">
+      <div class="content">
+        <span class="name" style="color:${msg.color || '#58a6ff'}">
+          ${msg.name}
+        </span>
+        <span class="time">${formatTime(msg.time)}</span>
+        <div>${msg.text}</div>
+      </div>
+    `;
 
-      chatDiv.appendChild(div);
-      chatDiv.scrollTop = chatDiv.scrollHeight;
-    });
+    chatDiv.appendChild(div);
+    chatDiv.scrollTop = chatDiv.scrollHeight;
+
+    // play sound
+    document.getElementById("ping").play().catch(() => {});
+  });
+
+  // typing indicator display
+  db.ref("typing").on("value", snapshot => {
+    const data = snapshot.val();
+    const typingDiv = document.getElementById("typing");
+
+    if (data && Date.now() - data.time < 2000) {
+      typingDiv.textContent = data.name + " is typing...";
+    } else {
+      typingDiv.textContent = "";
+    }
+  });
 </script>
 
 </body>
