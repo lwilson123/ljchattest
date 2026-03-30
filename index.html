@@ -25,13 +25,13 @@
       padding: 8px;
       background: #161b22;
       border-radius: 6px;
+      word-wrap: break-word;
     }
 
     .pfp {
       width: 40px;
       height: 40px;
       border-radius: 50%;
-      object-fit: cover;
     }
 
     .content {
@@ -48,31 +48,34 @@
       margin-left: 6px;
     }
 
-    #typing {
-      padding: 5px 10px;
-      font-size: 0.9em;
-      color: #8b949e;
-      height: 20px;
-    }
-
-    #inputArea {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-      padding: 10px;
-    }
-
-    input, button {
-      padding: 8px;
-      border-radius: 6px;
-      border: 1px solid #30363d;
-      background: #161b22;
+    .deleteBtn {
+      background: red;
+      border: none;
       color: white;
+      padding: 4px 6px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.8em;
+      margin-left: 10px;
     }
 
-    button {
-      background: #238636;
-      cursor: pointer;
+    #adminBtn {
+      position: fixed;
+      bottom: 10px;
+      right: 10px;
+      display: none;
+      background: purple;
+    }
+
+    #adminPanel {
+      display: none;
+      position: fixed;
+      top: 20%;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #161b22;
+      padding: 20px;
+      border-radius: 10px;
     }
   </style>
 </head>
@@ -80,18 +83,22 @@
 <body>
 
 <div id="chat"></div>
-<div id="typing"></div>
+
+<button id="adminBtn" onclick="openAdmin()">Admin</button>
+
+<div id="adminPanel">
+  <h3>Admin Panel</h3>
+  <button onclick="clearChat()">Clear Chat</button>
+  <button onclick="closeAdmin()">Close</button>
+</div>
 
 <div id="inputArea">
   <input id="name" placeholder="Name">
   <input type="color" id="color" value="#58a6ff">
-  <input type="file" id="pfpInput" accept="image/*">
+  <input type="file" id="pfpInput">
   <input id="message" placeholder="Message">
   <button onclick="send()">Send</button>
 </div>
-
-<!-- Sound -->
-<audio id="ping" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
 
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
@@ -110,8 +117,36 @@
   firebase.initializeApp(firebaseConfig);
   const db = firebase.database();
 
+  const ADMIN_KEY = "ljsecret123"; // CHANGE THIS
+
+  function unlockAdmin() {
+    const key = prompt("Enter admin key:");
+    if (key === ADMIN_KEY) {
+      localStorage.setItem("admin", "true");
+      document.getElementById("adminBtn").style.display = "block";
+      alert("Admin unlocked");
+    }
+  }
+
+  if (localStorage.getItem("admin") === "true") {
+    document.getElementById("adminBtn").style.display = "block";
+  }
+
+  function openAdmin() {
+    document.getElementById("adminPanel").style.display = "block";
+  }
+
+  function closeAdmin() {
+    document.getElementById("adminPanel").style.display = "none";
+  }
+
+  function clearChat() {
+    if (confirm("Delete all messages?")) {
+      db.ref("messages").remove();
+    }
+  }
+
   let pfpData = localStorage.getItem("pfp") || "";
-  let typingTimeout;
 
   document.getElementById("pfpInput").addEventListener("change", e => {
     const reader = new FileReader();
@@ -122,27 +157,9 @@
     if (e.target.files[0]) reader.readAsDataURL(e.target.files[0]);
   });
 
-  const nameInput = document.getElementById("name");
-  const messageInput = document.getElementById("message");
-
-  // typing indicator send
-  messageInput.addEventListener("input", () => {
-    const name = nameInput.value || "anon";
-
-    db.ref("typing").set({
-      name: name,
-      time: Date.now()
-    });
-
-    clearTimeout(typingTimeout);
-    typingTimeout = setTimeout(() => {
-      db.ref("typing").remove();
-    }, 2000);
-  });
-
   function send() {
-    const name = nameInput.value || "anon";
-    const message = messageInput.value;
+    const name = document.getElementById("name").value || "anon";
+    const message = document.getElementById("message").value;
     const color = document.getElementById("color").value;
 
     if (message.trim() === "") return;
@@ -155,24 +172,28 @@
       time: Date.now()
     });
 
-    messageInput.value = "";
-    db.ref("typing").remove();
+    document.getElementById("message").value = "";
   }
 
   function formatTime(t) {
-    const d = new Date(t);
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return new Date(t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
   }
 
   const chatDiv = document.getElementById("chat");
 
   db.ref("messages").limitToLast(100).on("child_added", snapshot => {
     const msg = snapshot.val();
+    const key = snapshot.key;
 
     const div = document.createElement("div");
     div.className = "msg";
 
     const pfp = msg.pfp || "https://via.placeholder.com/40";
+
+    let deleteBtn = "";
+    if (localStorage.getItem("admin") === "true") {
+      deleteBtn = `<button class="deleteBtn" onclick="deleteMsg('${key}')">X</button>`;
+    }
 
     div.innerHTML = `
       <img class="pfp" src="${pfp}">
@@ -181,28 +202,18 @@
           ${msg.name}
         </span>
         <span class="time">${formatTime(msg.time)}</span>
+        ${deleteBtn}
         <div>${msg.text}</div>
       </div>
     `;
 
     chatDiv.appendChild(div);
     chatDiv.scrollTop = chatDiv.scrollHeight;
-
-    // play sound
-    document.getElementById("ping").play().catch(() => {});
   });
 
-  // typing indicator display
-  db.ref("typing").on("value", snapshot => {
-    const data = snapshot.val();
-    const typingDiv = document.getElementById("typing");
-
-    if (data && Date.now() - data.time < 2000) {
-      typingDiv.textContent = data.name + " is typing...";
-    } else {
-      typingDiv.textContent = "";
-    }
-  });
+  function deleteMsg(id) {
+    db.ref("messages/" + id).remove();
+  }
 </script>
 
 </body>
