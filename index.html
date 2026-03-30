@@ -30,11 +30,16 @@
       color: #58a6ff;
     }
 
+    .time {
+      font-size: 0.8em;
+      color: #8b949e;
+      margin-left: 8px;
+    }
+
     #inputArea {
       display: flex;
       gap: 5px;
       padding: 10px;
-      background: #0d1117;
     }
 
     input {
@@ -44,20 +49,15 @@
       background: #161b22;
       color: white;
       border-radius: 6px;
-      outline: none;
     }
 
     button {
-      padding: 10px 15px;
+      padding: 10px;
       border: none;
       background: #238636;
       color: white;
       border-radius: 6px;
       cursor: pointer;
-    }
-
-    button:hover {
-      background: #2ea043;
     }
   </style>
 </head>
@@ -67,12 +67,11 @@
 <div id="chat"></div>
 
 <div id="inputArea">
-  <input id="name" placeholder="Name (or be anonymous)">
-  <input id="message" placeholder="Type a message...">
+  <input id="name" placeholder="Name">
+  <input id="message" placeholder="Message">
   <button onclick="send()">Send</button>
 </div>
 
-<!-- Firebase SDK -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
@@ -84,8 +83,7 @@
     projectId: "ljchat-2004c",
     storageBucket: "ljchat-2004c.firebasestorage.app",
     messagingSenderId: "871458399233",
-    appId: "1:871458399233:web:a91ee508eb50c2bc610c00",
-    measurementId: "G-CLQHTEZ3G5"
+    appId: "1:871458399233:web:a91ee508eb50c2bc610c00"
   };
 
   firebase.initializeApp(firebaseConfig);
@@ -99,25 +97,38 @@
 
     db.ref("messages").push({
       name: name,
-      text: message
+      text: message,
+      time: Date.now()
     });
 
     document.getElementById("message").value = "";
   }
 
-  db.ref("messages").on("child_added", snapshot => {
-    const msg = snapshot.val();
+  function formatTime(timestamp) {
+    const date = new Date(timestamp);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
 
-    const div = document.createElement("div");
-    div.className = "msg";
+  const chatDiv = document.getElementById("chat");
 
-    div.innerHTML = `<span class="name">${msg.name}</span>: ${msg.text}`;
+  db.ref("messages")
+    .limitToLast(100) // loads last 100 messages
+    .on("child_added", snapshot => {
 
-    document.getElementById("chat").appendChild(div);
+      const msg = snapshot.val();
 
-    document.getElementById("chat").scrollTop =
-      document.getElementById("chat").scrollHeight;
-  });
+      const div = document.createElement("div");
+      div.className = "msg";
+
+      div.innerHTML = `
+        <span class="name">${msg.name}</span>
+        <span class="time">${formatTime(msg.time)}</span><br>
+        ${msg.text}
+      `;
+
+      chatDiv.appendChild(div);
+      chatDiv.scrollTop = chatDiv.scrollHeight;
+    });
 </script>
 
 </body>
