@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>LJ Chaos Chat</title>
+<title>LJ Chaos Chat (Admin + Ban)</title>
 
 <style>
 body {
@@ -34,10 +34,7 @@ body {
   object-fit: cover;
 }
 
-.content {
-  flex: 1;
-  min-width: 0;
-}
+.content { flex: 1; min-width: 0; }
 
 .name { font-weight: bold; }
 
@@ -61,7 +58,6 @@ body {
 
 #inputArea {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
   padding: 10px;
 }
@@ -78,15 +74,16 @@ input, button {
 
 button { background: #1f2a44; cursor: pointer; }
 
-#pfpInput { display: none; }
+#pfpInput { display:none; }
 
 .pfpLabel {
   padding: 8px;
   border-radius: 6px;
   border: 1px solid #1c2333;
-  background: #0f1624;
   cursor: pointer;
 }
+
+.msg.admin { border-left: 3px solid #ff7f50; }
 </style>
 </head>
 
@@ -98,8 +95,10 @@ button { background: #1f2a44; cursor: pointer; }
 <div id="inputArea">
   <input id="name" placeholder="Name">
   <input type="color" id="color" value="#7aa2ff">
+
   <label for="pfpInput" class="pfpLabel">Upload PFP</label>
   <input type="file" id="pfpInput" accept="image/*">
+
   <input id="message" placeholder="Message">
   <button onclick="send()">Send</button>
 </div>
@@ -110,115 +109,172 @@ button { background: #1f2a44; cursor: pointer; }
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
 
 <script>
+// Firebase config
 const firebaseConfig = {
-  apiKey: "AIzaSy...",
+  apiKey: "AIzaSyCgZAIZwda93DY2LbeeVBa5f_hmHXPnVgE",
   authDomain: "ljchat-2004c.firebaseapp.com",
-  databaseURL: "https://ljchat-2004c-default-rtdb.firebaseio.com"
+  databaseURL: "https://ljchat-2004c-default-rtdb.firebaseio.com",
+  projectId: "ljchat-2004c",
+  storageBucket: "ljchat-2004c.appspot.com",
+  messagingSenderId: "871458399233",
+  appId: "1:871458399233:web:a91ee508eb50c2bc610c00"
 };
 
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
+// Hidden unique user ID
+let userId = localStorage.getItem("userId");
+if (!userId) {
+  userId = "user_" + Math.random().toString(36).substring(2, 10);
+  localStorage.setItem("userId", userId);
+}
+
 let pfpData = localStorage.getItem("pfp") || "";
 let typingTimeout;
 
-// COMPRESSED PFP
+// PFP compression
 document.getElementById("pfpInput").addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
-
   reader.onload = function(event) {
     const img = new Image();
-
     img.onload = function() {
       const canvas = document.createElement("canvas");
       const ctx = canvas.getContext("2d");
-
       const size = 64;
       canvas.width = size;
       canvas.height = size;
 
       const min = Math.min(img.width, img.height);
-      const sx = (img.width - min) / 2;
-      const sy = (img.height - min) / 2;
+      const sx = (img.width - min)/2;
+      const sy = (img.height - min)/2;
 
       ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-
       pfpData = canvas.toDataURL("image/jpeg", 0.5);
       localStorage.setItem("pfp", pfpData);
     };
-
     img.src = event.target.result;
   };
-
   reader.readAsDataURL(file);
 });
 
+const chatDiv = document.getElementById("chat");
 const nameInput = document.getElementById("name");
 const messageInput = document.getElementById("message");
 
-// ENTER SEND
-messageInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") send();
+// Typing indicator
+messageInput.addEventListener("input", () => {
+  const name = nameInput.value || "anon";
+  db.ref("typing").set({ name, time: Date.now() });
+  clearTimeout(typingTimeout);
+  typingTimeout = setTimeout(() => db.ref("typing").remove(), 2000);
 });
 
-// SEND
+// Admin password for banning (hidden)
+const adminPassword = "A1B2C3D4E5"; // change to your random password
+let isAdmin = false;
+
+// Ask for password if URL has ?admin
+if (window.location.search.includes("admin")) {
+  const pass = prompt("Enter admin password:");
+  if (pass === adminPassword) isAdmin = true;
+}
+
+// Add message
+function addMessage(msg, key) {
+  const div = document.createElement("div");
+  div.className = "msg";
+
+  if (isAdmin) div.classList.add("admin"); // admin sees border
+
+  div.innerHTML = `
+    <img class="pfp" src="${msg.pfp || 'https://via.placeholder.com/40'}" loading="lazy">
+    <div class="content">
+      <span class="name" style="color:${msg.color || '#7aa2ff'}">${msg.name}</span>
+      <span class="time">${new Date(msg.time).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}</span>
+      <div class="text">${msg.text}</div>
+      ${isAdmin ? `<div style="font-size:0.7em;color:#ff7f50;">ID: ${msg.userId} <button onclick="banUser('${msg.userId}')">Ban</button></div>` : ""}
+    </div>
+  `;
+  chatDiv.appendChild(div);
+  chatDiv.scrollTop = chatDiv.scrollHeight;
+
+  document.getElementById("ping").currentTime = 0;
+  document.getElementById("ping").play().catch(()=>{});
+}
+
+// Soft ban list
+let bannedUsers = {};
+db.ref("bannedUsers").on("value", snapshot => {
+  bannedUsers = snapshot.val() || {};
+});
+
+// Ban user function
+function banUser(uid) {
+  if (!isAdmin) return;
+  db.ref("bannedUsers/" + uid).set(true);
+  alert("User banned!");
+}
+
+// Send message
 function send() {
+  if (bannedUsers[userId]) {
+    alert("You are banned from sending messages!");
+    return;
+  }
+
   const name = nameInput.value || "anon";
   const text = messageInput.value;
   const color = document.getElementById("color").value;
 
   if (!text.trim()) return;
 
-  // ⚡ INSTANT LOCAL MESSAGE (feels fast)
-  addMessage({ name, text, color, pfp: pfpData, time: Date.now() });
-
-  db.ref("messages").push({ name, text, color, pfp: pfpData, time: Date.now() });
+  db.ref("messages").push({
+    userId,
+    name,
+    text,
+    color,
+    pfp: pfpData,
+    time: Date.now()
+  });
 
   messageInput.value = "";
+  db.ref("typing").remove();
 }
 
-// FORMAT TIME
-function formatTime(t) {
-  return new Date(t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
-}
+// Format time (already included above)
+function formatTime(t) { return new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}); }
 
-const chatDiv = document.getElementById("chat");
-
-// RENDER FUNCTION
-function addMessage(msg) {
-  const div = document.createElement("div");
-  div.className = "msg";
-
-  const pfp = msg.pfp || "https://via.placeholder.com/40";
-
-  div.innerHTML = `
-    <img class="pfp" src="${pfp}" loading="lazy">
-    <div class="content">
-      <span class="name" style="color:${msg.color || '#7aa2ff'}">${msg.name}</span>
-      <span class="time">${formatTime(msg.time)}</span>
-      <div class="text">${msg.text}</div>
-    </div>
-  `;
-
-  chatDiv.appendChild(div);
-  chatDiv.scrollTop = chatDiv.scrollHeight;
-
-  const sound = document.getElementById("ping");
-  sound.currentTime = 0;
-  sound.play().catch(()=>{});
-}
-
-// ⚡ FAST LOAD (bulk)
+// Prevent double messages
+let initialLoad = true;
 db.ref("messages").limitToLast(30).once("value", snapshot => {
-  snapshot.forEach(child => addMessage(child.val()));
+  chatDiv.innerHTML = "";
+  snapshot.forEach(child => addMessage(child.val(), child.key));
+  initialLoad = false;
 });
 
-// ⚡ ONLY NEW MESSAGES
-db.ref("messages").limitToLast(1).on("child_added", snapshot => {
-  addMessage(snapshot.val());
+db.ref("messages").limitToLast(30).on("child_added", snapshot => {
+  if (initialLoad) return;
+  addMessage(snapshot.val(), snapshot.key);
+});
+
+// Typing indicator display
+db.ref("typing").on("value", snapshot => {
+  const data = snapshot.val();
+  const typingDiv = document.getElementById("typing");
+  if (data && Date.now() - data.time < 2000) {
+    typingDiv.textContent = data.name + " is typing...";
+  } else {
+    typingDiv.textContent = "";
+  }
+});
+
+// Enter to send
+messageInput.addEventListener("keydown", e => {
+  if (e.key === "Enter") send();
 });
 </script>
 
