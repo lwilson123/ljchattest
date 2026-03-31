@@ -39,9 +39,7 @@ body {
   min-width: 0;
 }
 
-.name {
-  font-weight: bold;
-}
+.name { font-weight: bold; }
 
 .time {
   font-size: 0.7em;
@@ -53,14 +51,12 @@ body {
   margin-top: 3px;
   white-space: pre-wrap;
   word-break: break-word;
-  overflow-wrap: break-word;
 }
 
 #typing {
   padding: 6px 12px;
   font-size: 0.85em;
   color: #6e7681;
-  height: 20px;
 }
 
 #inputArea {
@@ -68,7 +64,6 @@ body {
   flex-wrap: wrap;
   gap: 6px;
   padding: 10px;
-  background: #070b14;
 }
 
 input, button {
@@ -79,22 +74,11 @@ input, button {
   color: white;
 }
 
-#message {
-  flex: 1;
-}
+#message { flex: 1; }
 
-button {
-  background: #1f2a44;
-  cursor: pointer;
-}
+button { background: #1f2a44; cursor: pointer; }
 
-button:hover {
-  background: #2b3a5c;
-}
-
-#pfpInput {
-  display: none;
-}
+#pfpInput { display: none; }
 
 .pfpLabel {
   padding: 8px;
@@ -102,21 +86,6 @@ button:hover {
   border: 1px solid #1c2333;
   background: #0f1624;
   cursor: pointer;
-}
-
-/* ADMIN PANEL */
-#adminPanel {
-  display:none;
-  position:fixed;
-  top:50%;
-  left:50%;
-  transform:translate(-50%,-50%);
-  background:#0f1624;
-  padding:20px;
-  border-radius:10px;
-  border:1px solid #1c2333;
-  z-index:999;
-  box-shadow:0 0 20px rgba(0,0,0,0.6);
 }
 </style>
 </head>
@@ -129,19 +98,10 @@ button:hover {
 <div id="inputArea">
   <input id="name" placeholder="Name">
   <input type="color" id="color" value="#7aa2ff">
-
   <label for="pfpInput" class="pfpLabel">Upload PFP</label>
   <input type="file" id="pfpInput" accept="image/*">
-
   <input id="message" placeholder="Message">
   <button onclick="send()">Send</button>
-</div>
-
-<!-- ADMIN PANEL -->
-<div id="adminPanel">
-  <h3>Admin Panel</h3>
-  <button onclick="wipeChat()">Wipe All Messages</button>
-  <button onclick="closeAdmin()">Close</button>
 </div>
 
 <audio id="ping" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
@@ -151,13 +111,9 @@ button:hover {
 
 <script>
 const firebaseConfig = {
-  apiKey: "AIzaSyCgZAIZwda93DY2LbeeVBa5f_hmHXPnVgE",
+  apiKey: "AIzaSy...",
   authDomain: "ljchat-2004c.firebaseapp.com",
-  databaseURL: "https://ljchat-2004c-default-rtdb.firebaseio.com",
-  projectId: "ljchat-2004c",
-  storageBucket: "ljchat-2004c.firebasestorage.app",
-  messagingSenderId: "871458399233",
-  appId: "1:871458399233:web:a91ee508eb50c2bc610c00"
+  databaseURL: "https://ljchat-2004c-default-rtdb.firebaseio.com"
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -166,7 +122,7 @@ const db = firebase.database();
 let pfpData = localStorage.getItem("pfp") || "";
 let typingTimeout;
 
-// PFP upload (compressed)
+// COMPRESSED PFP
 document.getElementById("pfpInput").addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -203,62 +159,45 @@ document.getElementById("pfpInput").addEventListener("change", e => {
 const nameInput = document.getElementById("name");
 const messageInput = document.getElementById("message");
 
-// ENTER to send
+// ENTER SEND
 messageInput.addEventListener("keydown", e => {
   if (e.key === "Enter") send();
 });
 
-// typing indicator
-messageInput.addEventListener("input", () => {
-  const name = nameInput.value || "anon";
-  db.ref("typing").set({ name: name, time: Date.now() });
-
-  clearTimeout(typingTimeout);
-  typingTimeout = setTimeout(() => {
-    db.ref("typing").remove();
-  }, 2000);
-});
-
+// SEND
 function send() {
   const name = nameInput.value || "anon";
-  const message = messageInput.value;
+  const text = messageInput.value;
   const color = document.getElementById("color").value;
 
-  if (message.trim() === "") return;
+  if (!text.trim()) return;
 
-  db.ref("messages").push({
-    name,
-    text: message,
-    color,
-    pfp: pfpData,
-    time: Date.now()
-  });
+  // ⚡ INSTANT LOCAL MESSAGE (feels fast)
+  addMessage({ name, text, color, pfp: pfpData, time: Date.now() });
+
+  db.ref("messages").push({ name, text, color, pfp: pfpData, time: Date.now() });
 
   messageInput.value = "";
-  db.ref("typing").remove();
 }
 
+// FORMAT TIME
 function formatTime(t) {
-  const d = new Date(t);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(t).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
 }
 
 const chatDiv = document.getElementById("chat");
 
-db.ref("messages").limitToLast(100).on("child_added", snapshot => {
-  const msg = snapshot.val();
+// RENDER FUNCTION
+function addMessage(msg) {
   const div = document.createElement("div");
-
   div.className = "msg";
 
   const pfp = msg.pfp || "https://via.placeholder.com/40";
 
   div.innerHTML = `
-    <img class="pfp" src="${pfp}">
+    <img class="pfp" src="${pfp}" loading="lazy">
     <div class="content">
-      <span class="name" style="color:${msg.color || '#7aa2ff'}">
-        ${msg.name}
-      </span>
+      <span class="name" style="color:${msg.color || '#7aa2ff'}">${msg.name}</span>
       <span class="time">${formatTime(msg.time)}</span>
       <div class="text">${msg.text}</div>
     </div>
@@ -267,48 +206,20 @@ db.ref("messages").limitToLast(100).on("child_added", snapshot => {
   chatDiv.appendChild(div);
   chatDiv.scrollTop = chatDiv.scrollHeight;
 
-  document.getElementById("ping").play().catch(() => {});
-});
-
-// typing display
-db.ref("typing").on("value", snapshot => {
-  const data = snapshot.val();
-  const typingDiv = document.getElementById("typing");
-
-  if (data && Date.now() - data.time < 2000) {
-    typingDiv.textContent = data.name + " is typing...";
-  } else {
-    typingDiv.textContent = "";
-  }
-});
-
-// 🔐 SECRET ADMIN KEYBIND
-document.addEventListener("keydown", e => {
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "a") {
-    openAdminLogin();
-  }
-});
-
-function openAdminLogin() {
-  const pass = prompt("Enter admin password:");
-
-  if (pass === "k9X4mT2qP7") {
-    document.getElementById("adminPanel").style.display = "block";
-  } else if (pass !== null) {
-    alert("Wrong password");
-  }
+  const sound = document.getElementById("ping");
+  sound.currentTime = 0;
+  sound.play().catch(()=>{});
 }
 
-function closeAdmin() {
-  document.getElementById("adminPanel").style.display = "none";
-}
+// ⚡ FAST LOAD (bulk)
+db.ref("messages").limitToLast(30).once("value", snapshot => {
+  snapshot.forEach(child => addMessage(child.val()));
+});
 
-function wipeChat() {
-  if (confirm("Delete ALL messages?")) {
-    db.ref("messages").remove();
-    alert("Chat wiped");
-  }
-}
+// ⚡ ONLY NEW MESSAGES
+db.ref("messages").limitToLast(1).on("child_added", snapshot => {
+  addMessage(snapshot.val());
+});
 </script>
 
 </body>
