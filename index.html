@@ -7,11 +7,10 @@
 body {
   margin: 0;
   font-family: Arial;
-  background: #070b14; /* darker navy */
+  background: #070b14;
   color: #e6edf3;
 }
 
-/* Chat area */
 #chat {
   height: 70vh;
   overflow-y: auto;
@@ -19,59 +18,44 @@ body {
   border-bottom: 1px solid #1c2333;
 }
 
-/* Message */
 .msg {
   display: flex;
   gap: 10px;
-  margin: 6px 0;
-  padding: 8px;
+  margin: 8px 0;
+  padding: 10px;
   background: #0f1624;
   border-radius: 8px;
-  max-width: 100%;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
 }
 
-/* Stack messages (same user) */
-.msg.sameUser {
-  margin-top: 2px;
-}
-
-/* PFP */
 .pfp {
   width: 32px;
   height: 32px;
   border-radius: 50%;
   object-fit: cover;
-  image-rendering: auto;
 }
 
-/* Content */
 .content {
   flex: 1;
   min-width: 0;
 }
 
-/* Name */
 .name {
   font-weight: bold;
 }
 
-/* Time */
 .time {
   font-size: 0.7em;
   color: #6e7681;
   margin-left: 6px;
 }
 
-/* Message text */
 .text {
-  margin-top: 2px;
+  margin-top: 3px;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: break-word;
 }
 
-/* Typing */
 #typing {
   padding: 6px 12px;
   font-size: 0.85em;
@@ -79,7 +63,6 @@ body {
   height: 20px;
 }
 
-/* Input */
 #inputArea {
   display: flex;
   flex-wrap: wrap;
@@ -96,25 +79,44 @@ input, button {
   color: white;
 }
 
-/* Message box grows */
 #message {
   flex: 1;
 }
 
-/* Button */
 button {
   background: #1f2a44;
   cursor: pointer;
-  transition: 0.2s;
 }
 
 button:hover {
   background: #2b3a5c;
 }
 
-/* File input fix */
 #pfpInput {
+  display: none;
+}
+
+.pfpLabel {
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid #1c2333;
   background: #0f1624;
+  cursor: pointer;
+}
+
+/* ADMIN PANEL */
+#adminPanel {
+  display:none;
+  position:fixed;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  background:#0f1624;
+  padding:20px;
+  border-radius:10px;
+  border:1px solid #1c2333;
+  z-index:999;
+  box-shadow:0 0 20px rgba(0,0,0,0.6);
 }
 </style>
 </head>
@@ -127,9 +129,19 @@ button:hover {
 <div id="inputArea">
   <input id="name" placeholder="Name">
   <input type="color" id="color" value="#7aa2ff">
+
+  <label for="pfpInput" class="pfpLabel">Upload PFP</label>
   <input type="file" id="pfpInput" accept="image/*">
+
   <input id="message" placeholder="Message">
   <button onclick="send()">Send</button>
+</div>
+
+<!-- ADMIN PANEL -->
+<div id="adminPanel">
+  <h3>Admin Panel</h3>
+  <button onclick="wipeChat()">Wipe All Messages</button>
+  <button onclick="closeAdmin()">Close</button>
 </div>
 
 <audio id="ping" src="https://www.soundjay.com/buttons/sounds/button-3.mp3"></audio>
@@ -154,30 +166,35 @@ const db = firebase.database();
 let pfpData = localStorage.getItem("pfp") || "";
 let typingTimeout;
 
-// 🔽 COMPRESS PFP (IMPORTANT FIX)
+// PFP upload (compressed)
 document.getElementById("pfpInput").addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
 
-  const img = new Image();
   const reader = new FileReader();
 
   reader.onload = function(event) {
+    const img = new Image();
+
+    img.onload = function() {
+      const canvas = document.createElement("canvas");
+      const ctx = canvas.getContext("2d");
+
+      const size = 64;
+      canvas.width = size;
+      canvas.height = size;
+
+      const min = Math.min(img.width, img.height);
+      const sx = (img.width - min) / 2;
+      const sy = (img.height - min) / 2;
+
+      ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+
+      pfpData = canvas.toDataURL("image/jpeg", 0.5);
+      localStorage.setItem("pfp", pfpData);
+    };
+
     img.src = event.target.result;
-  };
-
-  img.onload = function() {
-    const canvas = document.createElement("canvas");
-    const ctx = canvas.getContext("2d");
-
-    const size = 64; // compress to 64x64
-    canvas.width = size;
-    canvas.height = size;
-
-    ctx.drawImage(img, 0, 0, size, size);
-
-    pfpData = canvas.toDataURL("image/jpeg", 0.6); // compression
-    localStorage.setItem("pfp", pfpData);
   };
 
   reader.readAsDataURL(file);
@@ -186,11 +203,9 @@ document.getElementById("pfpInput").addEventListener("change", e => {
 const nameInput = document.getElementById("name");
 const messageInput = document.getElementById("message");
 
-// ENTER TO SEND
+// ENTER to send
 messageInput.addEventListener("keydown", e => {
-  if (e.key === "Enter") {
-    send();
-  }
+  if (e.key === "Enter") send();
 });
 
 // typing indicator
@@ -230,27 +245,21 @@ function formatTime(t) {
 
 const chatDiv = document.getElementById("chat");
 
-let lastUser = null;
-
 db.ref("messages").limitToLast(100).on("child_added", snapshot => {
   const msg = snapshot.val();
   const div = document.createElement("div");
 
-  const sameUser = msg.name === lastUser;
-
-  div.className = "msg" + (sameUser ? " sameUser" : "");
+  div.className = "msg";
 
   const pfp = msg.pfp || "https://via.placeholder.com/40";
 
   div.innerHTML = `
     <img class="pfp" src="${pfp}">
     <div class="content">
-      ${!sameUser ? `
-        <span class="name" style="color:${msg.color || '#7aa2ff'}">
-          ${msg.name}
-        </span>
-        <span class="time">${formatTime(msg.time)}</span>
-      ` : ``}
+      <span class="name" style="color:${msg.color || '#7aa2ff'}">
+        ${msg.name}
+      </span>
+      <span class="time">${formatTime(msg.time)}</span>
       <div class="text">${msg.text}</div>
     </div>
   `;
@@ -258,12 +267,10 @@ db.ref("messages").limitToLast(100).on("child_added", snapshot => {
   chatDiv.appendChild(div);
   chatDiv.scrollTop = chatDiv.scrollHeight;
 
-  lastUser = msg.name;
-
   document.getElementById("ping").play().catch(() => {});
 });
 
-// typing indicator
+// typing display
 db.ref("typing").on("value", snapshot => {
   const data = snapshot.val();
   const typingDiv = document.getElementById("typing");
@@ -274,6 +281,34 @@ db.ref("typing").on("value", snapshot => {
     typingDiv.textContent = "";
   }
 });
+
+// 🔐 SECRET ADMIN KEYBIND
+document.addEventListener("keydown", e => {
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "a") {
+    openAdminLogin();
+  }
+});
+
+function openAdminLogin() {
+  const pass = prompt("Enter admin password:");
+
+  if (pass === "k9X4mT2qP7") {
+    document.getElementById("adminPanel").style.display = "block";
+  } else if (pass !== null) {
+    alert("Wrong password");
+  }
+}
+
+function closeAdmin() {
+  document.getElementById("adminPanel").style.display = "none";
+}
+
+function wipeChat() {
+  if (confirm("Delete ALL messages?")) {
+    db.ref("messages").remove();
+    alert("Chat wiped");
+  }
+}
 </script>
 
 </body>
